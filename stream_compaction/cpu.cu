@@ -19,7 +19,33 @@ namespace StreamCompaction {
          */
         void scan(int n, int *odata, const int *idata) {
             timer().startCpuTimer();
-            // TODO
+           
+            for (int i = 1; i < n; i++) {
+                odata[i] = odata[i - 1] + idata[i - 1];
+            }
+
+            // Simulate GPU scan, only effective when n is the power of 2
+            /*memcpy(odata, idata, sizeof(int) * n);
+
+            int iteration = ilog2ceil(n);
+            int interval = 2;
+            for (int i = 0; i < iteration; i++) {
+                for (int j = 0; j < n; j += interval) {
+                    odata[j + interval - 1] += odata[j + interval / 2 - 1];
+                }
+                interval *= 2;
+            }
+  
+            odata[n - 1] = 0;
+            for (int i = iteration - 1; i >= 0; i--) {
+                interval /= 2;
+                for (int j = 0; j < n; j += interval) {
+                    int t = odata[j + interval/2 - 1];
+                    odata[j + interval/2 - 1] = odata[j + interval - 1];
+                    odata[j + interval - 1] = t + odata[j + interval - 1];
+                }
+            }*/
+
             timer().endCpuTimer();
         }
 
@@ -30,9 +56,16 @@ namespace StreamCompaction {
          */
         int compactWithoutScan(int n, int *odata, const int *idata) {
             timer().startCpuTimer();
-            // TODO
+            
+            int current = 0;
+            for (int i = 0; i < n; i++) {
+                if (idata[i] != 0) {
+                    odata[current++] = idata[i];
+                }
+            }
+
             timer().endCpuTimer();
-            return -1;
+            return current;
         }
 
         /**
@@ -42,9 +75,32 @@ namespace StreamCompaction {
          */
         int compactWithScan(int n, int *odata, const int *idata) {
             timer().startCpuTimer();
-            // TODO
+
+            int* temp1 = new int[n];
+            memset(temp1, 0, sizeof(int) * n);
+            int* temp2 = new int[n];
+            memset(temp2, 0, sizeof(int) * n);
+            for (int i = 0; i < n; i++) {
+                temp1[i] = idata[i] > 0 ? 1 : 0;
+            }
+
+            // scan
+            for (int i = 1; i < n; i++) {
+                temp2[i] = temp2[i - 1] + temp1[i - 1];
+            }
+
+            int last = 0;
+            for (int i = 0; i < n; i++) {
+                if (temp1[i] == 1) {
+                    last = temp2[i] + 1;
+                    odata[temp2[i]] = idata[i];
+                }
+            }
+
             timer().endCpuTimer();
-            return -1;
+            delete[] temp1;
+            delete[] temp2;
+            return last;
         }
     }
 }
