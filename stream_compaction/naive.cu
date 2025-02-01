@@ -18,9 +18,6 @@ namespace StreamCompaction {
             return timer;
         }
 
-        int* dev_odata;
-        int* dev_idata;
-        
         __global__ void kernScan(int n, int* odata, int* idata, int offset) {
             int idx = threadIdx.x + (blockIdx.x * blockDim.x);
             if (idx >= n)
@@ -39,11 +36,12 @@ namespace StreamCompaction {
          */
         void scan(int n, int *odata, const int *idata) {
             int sizeInBytes = n * sizeof(int);
+            int* dev_odata;
+            int* dev_idata;
             cudaMalloc((void**)&dev_odata, sizeInBytes);
             checkCUDAError("cudaMalloc dev_odata failed!");
             cudaMalloc((void**)&dev_idata, sizeInBytes);
             checkCUDAError("cudaMalloc dev_idata failed!");
-
 
             cudaMemcpy(dev_idata, idata, sizeInBytes, cudaMemcpyHostToDevice);
             checkCUDAError("cudaMemcpy to dev_idata failed!");
