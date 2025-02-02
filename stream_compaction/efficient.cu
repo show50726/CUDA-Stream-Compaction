@@ -9,6 +9,7 @@
 #endif
 #include <device_functions.h>
 
+
 #define NUM_BANKS 32
 #define LOG_NUM_BANKS 4
 #define CONFLICT_FREE_OFFSET(n)(((n) >> NUM_BANKS) + ((n) >> (2 * LOG_NUM_BANKS)))
@@ -20,6 +21,9 @@
 namespace StreamCompaction {
     namespace Efficient {
         using StreamCompaction::Common::PerformanceTimer;
+        using StreamCompaction::Common::kernMapToBoolean;
+        using StreamCompaction::Common::kernScatter;
+
         PerformanceTimer& timer()
         {
             static PerformanceTimer timer;
@@ -165,10 +169,42 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int *odata, const int *idata) {
+            int* dev_bool_data, *dev_scan_data;
+            int* dev_idata, *dev_odata;
+            cudaMalloc((void**)&dev_bool_data, n * sizeof(int));
+            checkCUDAError("cudaMalloc dev_bool_data failed!");
+            cudaMalloc((void**)&dev_scan_data, n * sizeof(int));
+            checkCUDAError("cudaMalloc dev_scan_data failed!");
+            cudaMalloc((void**)&dev_odata, n * sizeof(int));
+            checkCUDAError("cudaMalloc dev_odata failed!");
+            cudaMalloc((void**)&dev_idata, n * sizeof(int));
+            checkCUDAError("cudaMalloc dev_idata failed!");
+
+            cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+            checkCUDAError("cudaMemcpy to dev_idata failed!");
+            
             timer().startGpuTimer();
-            // TODO
+            int blockSize = 64;
+            dim3 fullBlocksPerGrid((n + blockSize - 1) / blockSize);
+            kernMapToBoolean << <fullBlocksPerGrid, blockSize >> > (n, dev_bool_data, dev_idata);
+
+            recursiveScan(n, dev_scan_data, dev_bool_data);
+            
+            kernScatter << <fullBlocksPerGrid, blockSize >> > (n, dev_odata, dev_idata, dev_bool_data, dev_scan_data);
             timer().endGpuTimer();
-            return -1;
+
+            cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
+            checkCUDAError("cudaMemcpy to odata failed!");
+            int count;
+            cudaMemcpy(&count, dev_scan_data + n - 1, sizeof(int), cudaMemcpyDeviceToHost);
+            count += idata[n - 1] ? 1 : 0;
+
+            cudaFree(dev_bool_data);
+            cudaFree(dev_scan_data);
+            cudaFree(dev_odata);
+            cudaFree(dev_idata);
+            checkCUDAError("cudaFree failed!");
+            return count;
         }
     }
 }
