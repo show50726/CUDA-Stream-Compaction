@@ -15,6 +15,7 @@
 
 #define MAX_THREADS_PER_BLOCK 1024
 #define MAX_ELEMENTS_PER_BLOCK (MAX_THREADS_PER_BLOCK * 2)
+#define MAX_SHARE_SIZE (MAX_ELEMENTS_PER_BLOCK + CONFLICT_FREE_OFFSET(MAX_ELEMENTS_PER_BLOCK - 1))
 
 namespace StreamCompaction {
     namespace Efficient {
@@ -26,7 +27,7 @@ namespace StreamCompaction {
         }
 
         __global__ void kernPrescan(int n, int* odata, int* idata, int* sum) {
-            extern __shared__ int temp[MAX_THREADS_PER_BLOCK];
+            extern __shared__ int temp[MAX_SHARE_SIZE];
             int idx = threadIdx.x;
             int bid = blockIdx.x;
             int blockOffset = bid * MAX_ELEMENTS_PER_BLOCK;
@@ -37,8 +38,8 @@ namespace StreamCompaction {
             int bi = idx + (leafNum >> 1);
             int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
             int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
-            temp[ai + bankOffsetA] = ai + bankOffsetA < n ? idata[ai] : 0;
-            temp[bi + bankOffsetB] = bi + bankOffsetB < n ? idata[bi] : 0;
+            temp[ai + bankOffsetA] = ai + blockOffset < n ? idata[ai + blockOffset] : 0;
+            temp[bi + bankOffsetB] = bi + blockOffset < n ? idata[bi + blockOffset] : 0;
             
             for (int d = leafNum >> 1; d > 0; d >>= 1) {
                 __syncthreads();
@@ -55,7 +56,7 @@ namespace StreamCompaction {
             __syncthreads();
             if (idx == 0) {
                 // The last element in a block
-                int index = leafNum - 1 + CONFLICT_FREE_OFFSET(n - 1);
+                int index = leafNum - 1 + CONFLICT_FREE_OFFSET(leafNum - 1);
                 sum[bid] = temp[index];
                 temp[index] = 0;
             }
@@ -74,11 +75,11 @@ namespace StreamCompaction {
                 }
             }
             __syncthreads();
-            if (ai + bankOffsetA < n)
-                odata[ai] = temp[ai + bankOffsetA];
+            if (ai + blockOffset < n)
+                odata[ai + blockOffset] = temp[ai + bankOffsetA];
 
-            if (bi + bankOffsetB < n)
-                odata[bi] = temp[bi + bankOffsetB];
+            if (bi + blockOffset < n)
+                odata[bi + blockOffset] = temp[bi + bankOffsetB];
         }
 
         __global__ void kernAdd(int n, int* valus, int* prefix_sum)
@@ -99,36 +100,50 @@ namespace StreamCompaction {
             }
         }
 
+        void recursiveScan(int n, int* dev_odata, int* dev_idata) {
+            int* dev_sum, *dev_prefix_sum;
+            int blockNum = (n + MAX_ELEMENTS_PER_BLOCK - 1) / MAX_ELEMENTS_PER_BLOCK;
+            cudaMalloc((void**)&dev_sum, blockNum * sizeof(int));
+            checkCUDAError("cudaMalloc dev_sum failed!");
+            cudaMalloc((void**)&dev_prefix_sum, blockNum * sizeof(int));
+            checkCUDAError("cudaMalloc dev_prefix_sum failed!");
+
+            dim3 fullBlocksPerGrid(blockNum);
+            
+            kernPrescan << <fullBlocksPerGrid, MAX_THREADS_PER_BLOCK >> > (n, dev_odata, dev_idata, dev_sum);
+            checkCUDAError("kernPrescan executed failed!");
+
+            cudaDeviceSynchronize();
+            if (blockNum != 1) {
+                recursiveScan(blockNum, dev_prefix_sum, dev_sum);
+                kernAdd << <fullBlocksPerGrid, MAX_THREADS_PER_BLOCK >> > (n, dev_odata, dev_prefix_sum);
+                checkCUDAError("kernAdd executed failed!");
+                cudaDeviceSynchronize();
+            }
+
+            cudaFree(dev_sum);
+            cudaFree(dev_prefix_sum);
+            checkCUDAError("cudaFree failed!");
+        }
+
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
         void scan(int n, int *odata, const int *idata) {
             int* dev_odata;
             int* dev_idata;
-            int* dev_sum;
-            int blockNum = (n + MAX_ELEMENTS_PER_BLOCK - 1) / MAX_ELEMENTS_PER_BLOCK;
             int sizeInBytes = n * sizeof(int);
             cudaMalloc((void**)&dev_odata, sizeInBytes);
             checkCUDAError("cudaMalloc dev_odata failed!");
             cudaMalloc((void**)&dev_idata, sizeInBytes);
             checkCUDAError("cudaMalloc dev_idata failed!");
-            cudaMalloc((void**)&dev_sum, blockNum * sizeof(int));
-            checkCUDAError("cudaMalloc dev_sum failed!");
 
             cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
             checkCUDAError("cudaMemcpy to dev_idata failed!");
             
-            dim3 fullBlocksPerGrid(blockNum);
-
             timer().startGpuTimer();
-            kernPrescan << <fullBlocksPerGrid, MAX_THREADS_PER_BLOCK>> > (n, dev_odata, dev_idata, dev_sum);
-            checkCUDAError("kernPrescan executed failed!");
 
-            cudaDeviceSynchronize();
-            if (blockNum != 1) {
-                kernAdd << <fullBlocksPerGrid, MAX_THREADS_PER_BLOCK >> > (n, dev_odata, dev_sum);
-                checkCUDAError("kernAdd executed failed!");
-            }
+            recursiveScan(n, dev_odata, dev_idata);
 
             cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
             checkCUDAError("cudaMemcpy to odata failed!");
