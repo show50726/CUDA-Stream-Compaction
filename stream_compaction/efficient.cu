@@ -148,11 +148,11 @@ namespace StreamCompaction {
             timer().startGpuTimer();
 
             recursiveScan(n, dev_odata, dev_idata);
+            
+            timer().endGpuTimer();
 
             cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
             checkCUDAError("cudaMemcpy to odata failed!");
-
-            timer().endGpuTimer();
 
             cudaFree(dev_odata);
             cudaFree(dev_idata);

@@ -60,11 +60,11 @@ namespace StreamCompaction {
                 std::swap(dev_odata, dev_idata);
             }
 
+            timer().endGpuTimer();
+
             // We swap the buffer at the end of the loop, so the target value would be dev_idata
             cudaMemcpy(odata + 1, dev_idata, (sizeInBytes - sizeof(int)), cudaMemcpyDeviceToHost);
             checkCUDAError("cudaMemcpy to odata failed!");
-
-            timer().endGpuTimer();
 
             // cleanup
             cudaFree(dev_odata);
