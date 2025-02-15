@@ -1,14 +1,39 @@
 CUDA Stream Compaction
 ======================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
+This project implements different GPU stream compaction approaches in CUDA, from scratch.
 
-* (TODO) YOUR NAME HERE
-  * (TODO) [LinkedIn](), [personal website](), [twitter](), etc.
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+This project is forked from **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
 
-### (TODO: Your README)
+## Parallel Scan
 
-Include analysis, etc. (Remember, this is public, so don't put
-anything here that you don't want to share with the world.)
+// TODO: Introduce parallel scan
+
+// TODO: Naive approach
+
+// TODO: Work efficient approach +  Shared Memory && Hardware Optimization
+
+In this project, we provide multiple types of Parallel Scan implementation as below, also included thrust implementation for comparison:
+- CPU based: It will be used as the expected value for the other tests.
+- Naive approach
+  - The algorithm performs `O(n log2 n)` addition operations.
+- Work-Efficient approach
+  - The algorithm performs `O(n)` operations
+- Thrust: Call the `thrust` function directly, for performance comparison.
+
+## Stream Compaction
+
+Informally, stream compaction is a filtering operation: from an input vector, it selects a subset of this vector and packs that subset into a dense output vector. 
+![](img/example.jpg)
+More formally, stream compaction takes an input vector vi and a predicate p, and outputs only those elements in vi for which p(vi ) is true, preserving the ordering of the input elements.
+(From GPU Gems 3, Chapter 39)
+
+// TODO: connect parallal scan with stream compaction
+
+## Performance Analysis
+
+// Diagram
+
+## Reference
+- GPU Gems 3, Chapter 39 - [Parallel Prefix Sum (Scan) with CUDA](https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda)
 
